@@ -1,0 +1,17 @@
+mnexec
+*.pyc
+*~
+*.1
+*.xcodeproj
+*.xcworkspace
+.idea
+\#*\#
+mininet_wifi.egg-info
+build
+dist
+doc/html
+doc/latex
+trunk
+examples/mytest
+iw
+hostap
