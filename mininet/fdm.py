@@ -464,7 +464,7 @@ class FDM(object):
             backFTConfig=[]
 
             if backboneFT:
-                backFTConfig= open("backFTConfig.sh", "w")
+                backFTConfig= open("flowTable/backFTConfig.sh", "w")
                 backFTConfig.write("#!/bin/bash\n\n")
 
             cnt=1
@@ -491,8 +491,8 @@ class FDM(object):
                     backFTConfig.write(command)
                 elif n in wireless_to_net:
                     '''generate dynamic net flow and queue tables'''
-                    netFTConfig = open("netFTConfig_"+names[n]+".sh", "w")
-                    netQConfig = open("netQConfig_"+names[n]+".sh", "w")
+                    netFTConfig = open("flowTable/netFTConfig_"+names[n]+".sh", "w")
+                    netQConfig = open("flowTable/netQConfig_"+names[n]+".sh", "w")
                     netFTConfig.write("#!/bin/bash\n\n")
                     netQConfig.write("#!/bin/bash\n\n")
                     outport=ft_book[n]['out'][0]
@@ -522,14 +522,14 @@ class FDM(object):
                     netFTConfig.write(FTcommand)
                     cnt+=len(Gtable[link])
                     netFTConfig.close()
-                    call(["sudo", "chmod", "777", "netFTConfig_"+names[n]+".sh"])
+                    call(["sudo", "chmod", "777", "flowTable/netFTConfig_"+names[n]+".sh"])
                     netQConfig.close()
-                    call(["sudo", "chmod", "777", "netQConfig_"+names[n]+".sh"])
+                    call(["sudo", "chmod", "777", "flowTable/netQConfig_"+names[n]+".sh"])
 
             if backboneFT:
                 backFTConfig.close()
-                call(["sudo","chmod","777","backFTConfig.sh"])
-                call(["sudo","bash","backFTConfig.sh"])
+                call(["sudo","chmod","777","flowTable/backFTConfig.sh"])
+                call(["sudo","bash","flowTable/backFTConfig.sh"])
             '''remove tables and queues and apply new ones'''
             info('*** remove net qos, queue, and flow tables ***\n')
             for net in self.nets:
@@ -539,8 +539,8 @@ class FDM(object):
             Net.cmdPrint('sudo ovs-vsctl --all destroy queue')
             for net in self.nets:
                 Net.cmdPrint('sudo ovs-ofctl del-flows %s' % net)
-                call(["sudo","bash","netFTConfig_"+net+".sh"])
-                call(["sudo", "bash", "netQConfig_" + net + ".sh"])
+                call(["sudo","bash","flowTable/netFTConfig_"+net+".sh"])
+                call(["sudo", "bash", "flowTable/netQConfig_" + net + ".sh"])
 
         else:
             '''Max-min reduce request'''
