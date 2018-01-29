@@ -142,7 +142,20 @@ class FDM(object):
                     key=self.hub+'-'+self.server
                     self.connectivity[key]=1
                     self.linkToIntf[key]=intf
-
+        '''check keys of demand, capacity and delay'''
+        for key in demand:
+            if key not in self.users:
+                info('demand does not match user\n')
+                exit(0)
+        for key in capacity:
+            if key not in self.connectivity:
+                info('capacity key does not match any link in connectivity\n')
+                exit(0)
+        for key in delay:
+            if key not in self.connectivity:
+                info('delay key does not match any link in connectivity\n')
+                exit(0)
+        
         info("connecitvities:\n")
         print(self.connectivity)
         info("IP tables:\n")
