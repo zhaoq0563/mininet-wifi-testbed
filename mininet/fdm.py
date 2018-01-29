@@ -1,5 +1,7 @@
 from mininet.log import info, output
 from mininet.wifiLink import wirelessLink
+from subprocess import call, check_call, check_output
+
 import threading
 import time
 
@@ -118,7 +120,7 @@ class FDM(object):
                             self.backbones[Net.name] = otherEnd.name
                             key = Net.name + '-' + otherEnd.name
                             self.connectivity[key] = 1
-                            self.linkToIntf[key] = intf.name
+                            self.linkToIntf[key] = (intf.name,intfs[0].name)
                             #validate backbone node
                             for b_intf in otherEnd.intfList():
                                 if(b_intf.name!='lo'):
@@ -132,7 +134,7 @@ class FDM(object):
                                         if(tmpEnd.name not in self.nets):
                                             key2 = otherEnd.name + '-' + self.hub
                                             self.connectivity[key2] = 1
-                                            self.linkToIntf[key2]=b_intf
+                                            self.linkToIntf[key2]=(b_intf.name,b_intfs[0].name)
 
         for intf in mininet.nameToNode[self.hub].intfList():
             if(intf.name!='lo'):
@@ -141,7 +143,7 @@ class FDM(object):
                 if(intfs[0].node.name==self.server):
                     key=self.hub+'-'+self.server
                     self.connectivity[key]=1
-                    self.linkToIntf[key]=intf
+                    self.linkToIntf[key]=(intf.name,intfs[0].name)
         '''check keys of demand, capacity and delay'''
         for key in demand:
             if key not in self.users:
@@ -174,6 +176,10 @@ class FDM(object):
 
     def checkChange(self, start, end, interval):
         threshold=0.3
+        print("init round")
+        self.run_FDM(self.users,True)
+        time.sleep(interval)
+
         for i in range(start,end,interval):
             print("round ",i)
             changeList = set([])
@@ -221,7 +227,7 @@ class FDM(object):
 
             time.sleep(interval)
 
-    def run_FDM(self, changeList, quickStart=False, use_alpha=False):
+    def run_FDM(self, changeList, backboneFT=False, quickStart=False, use_alpha=False):
         n_host=len(self.users)+1
         n_net =len(self.nets)
         cnt=0
@@ -305,10 +311,10 @@ class FDM(object):
                 v_pairs.append(v_pair)
         if True:
             key = names[hub] +'-'+ names[server]
-            info('hub and server: ',key,'\n','\n\n')
+            #info('hub and server: ',key,'\n','\n\n')
             v_pair={}
             if (key in self.connectivity):
-                info('add hub server key\n\n')
+                #info('add hub server key\n\n')
                 v_pair['End1'] = hub
                 v_pair['End2'] = server
                 if (key in self.delay):
@@ -318,9 +324,9 @@ class FDM(object):
                 v_pairs.append(v_pair)
 
         nl=len(v_pairs)
-        info('got v_pairs\n')
-        info(v_pairs,'\n')
-        info(self.connectivity,'\n')
+        #info('got v_pairs\n')
+        #info(v_pairs,'\n')
+        #info(self.connectivity,'\n')
         Adj=[[] for i in range(nn)]
         End1, End2 =([0 for j in range(nl)] for i in range(2))
         Cap, Cost, Offset, Gflow, Eflow, Pflow, FDlen, NewCap=([float(0) for j in range(nl)] for i in range(8))
@@ -346,8 +352,8 @@ class FDM(object):
                     key=host_to_user[it['End1']]+'-'+wireless_to_net[it['End2']]
                     if(key in self.prev_flow):
                         Offset[idx]=float(self.prev_flow[key])
-        info("Adj is: \n\n")
-        info(Adj,'\n\n')
+        #info("Adj is: \n\n")
+        #info(Adj,'\n\n')
         Gtable, Etable = ([{} for i in range(nl)] for j in range(2))
         MsgLen='1000B'
         PreviousDelay=float("inf")
@@ -365,8 +371,8 @@ class FDM(object):
         if(not quickStart):
             self.SetLinkLens(nl, Gflow, Cap, MsgLen, FDlen, Cost, Offset)
             self.SetSP(nn, End2, FDlen, Adj, SPdist, SPpred)
-            info("Predecessors:\n")
-            info(SPpred,'\n\n')
+            #info("Predecessors:\n")
+            #info(SPpred,'\n\n')
             self.LoadLinks(nn,nl,Req,SPpred,End1,Gflow,Gtable,names)
         else:
             #Quick start
@@ -437,8 +443,105 @@ class FDM(object):
             info(count,'\n')
         if(feasible):
             '''Printing flow tables and stuff'''
+
             print(Gtable)
             info('FDM success\n')
+
+            '''Generate Flowtable and queues'''
+            ft_book=[{} for i in range(nn)]
+            for i in range(nl):
+                end1=End1[i]
+                end2=End2[i]
+                key=names[end1]+'-'+names[end2]
+                if end1 not in host_to_user:
+                    if 'out' not in ft_book[end1]:
+                        ft_book[end1]['out']=[]
+                    if 'in' not in ft_book[end2]:
+                        ft_book[end2]['in']=[]
+                    ft_book[end1]['out'].append(self.linkToIntf[key][0])
+                    ft_book[end2]['in'].append(self.linkToIntf[key][1])
+
+            backFTConfig=[]
+
+            if backboneFT:
+                backFTConfig= open("backFTConfig.sh", "w")
+                backFTConfig.write("#!/bin/bash\n\n")
+
+            cnt=1
+            for n in range(nn):
+                if n not in wireless_to_net and n not in host_to_user and n !=server and backboneFT:
+                    '''generate static backhaul flow table'''
+                    if(len(ft_book[n]['out'])>1):
+                        info('backhaul node ',names[n],' output port number larger than 2\n')
+                        print(ft_book[n]['out'])
+                        exit(0)
+                    outport=ft_book[n]['out'][0]
+                    sw,intf1=outport.split('-')
+                    intf1_num=intf1[3:]
+                    for port in ft_book[n]['in']:
+                        sw,intf2=port.split('-')
+                        intf2_num=intf2[3:]
+                        command="sudo ovs-ofctl add-flow "+names[n]+" in_port="+intf2_num+\
+                            ",actions=output:"+intf1_num
+                        backFTConfig.write(command+'\n')
+                    command="sudo ovs-ofctl add-flow "+names[n]+" in_port="+intf1_num+\
+                        ",actions=normal"
+                    backFTConfig.write(command+'\n')
+                    command="sudo ovs-ofctl add-flow "+names[n]+" priority=100,actions=normal\n"
+                    backFTConfig.write(command)
+                elif n in wireless_to_net:
+                    '''generate dynamic net flow and queue tables'''
+                    netFTConfig = open("netFTConfig_"+names[n]+".sh", "w")
+                    netQConfig = open("netQConfig_"+names[n]+".sh", "w")
+                    netFTConfig.write("#!/bin/bash\n\n")
+                    netQConfig.write("#!/bin/bash\n\n")
+                    outport=ft_book[n]['out'][0]
+                    sw,intf=outport.split('-')
+                    intf_num=intf[3:]
+                    link=Adj[n][0]
+                    Qcommand="sudo ovs-vsctl -- set Port "+outport+" qos=@newqos -- --id=@newqos"+\
+                        " create QoS type=linux-htb other-config:max-rate=100000000 "
+
+                    for idx in range(len(Gtable[link])):
+                        Qcommand+=" queues:"+str(idx+cnt)+"=@q"+str(idx+cnt)+" "
+                    Qcommand+='-- '
+                    for idx,k in enumerate(Gtable[link]):
+                        Qcommand+="--id=@q"+str(idx+cnt)+" create Queue other-config:min-rate="+\
+                            str(int(float(Gtable[link][k])*(10**6)))+" other-config:max-rate="+\
+                            str(int(float(Gtable[link][k])*(10**6)))+" -- "
+                        FTcommand = "sudo ovs-ofctl add-flow " + names[n] + " ip,nw_src=" + k + "/32,actions=set_queue:" + \
+                                    str(idx + cnt) + ",output:" + intf_num
+                        netFTConfig.write(FTcommand + '\n')
+                    Qcommand=Qcommand.rstrip('-- ')+'\n'
+                    netQConfig.write(Qcommand)
+                    Qcommand="sudo ovs-ofctl -O Openflow13 queue-stats "+names[n]+'\n'
+                    netQConfig.write(Qcommand)
+                    FTcommand="sudo ovs-ofctl add-flow "+names[n]+" in_port="+intf_num+",actions=normal\n"
+                    netFTConfig.write(FTcommand)
+                    FTcommand="sudo ovs-ofctl add-flow "+names[n]+" priority=100,actions=normal\n"
+                    netFTConfig.write(FTcommand)
+                    cnt+=len(Gtable[link])
+                    netFTConfig.close()
+                    call(["sudo", "chmod", "777", "netFTConfig_"+names[n]+".sh"])
+                    netQConfig.close()
+                    call(["sudo", "chmod", "777", "netQConfig_"+names[n]+".sh"])
+
+            if backboneFT:
+                backFTConfig.close()
+                call(["sudo","chmod","777","backFTConfig.sh"])
+                call(["sudo","bash","backFTConfig.sh"])
+            '''remove tables and queues and apply new ones'''
+            info('*** remove net qos, queue, and flow tables ***\n')
+            for net in self.nets:
+                Net=self.mn.nameToNode[net]
+                Net.cmdPrint('sudo ovs-vsctl clear port %s qos'% ft_book[net_to_wireless[net]]['out'][0])
+            Net.cmdPrint('sudo ovs-vsctl --all destroy qos')
+            Net.cmdPrint('sudo ovs-vsctl --all destroy queue')
+            for net in self.nets:
+                Net.cmdPrint('sudo ovs-ofctl del-flows %s' % net)
+                call(["sudo","bash","netFTConfig_"+net+".sh"])
+                call(["sudo", "bash", "netQConfig_" + net + ".sh"])
+
         else:
             '''Max-min reduce request'''
             info('FDM success infeasible\n')
