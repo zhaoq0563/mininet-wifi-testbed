@@ -29,15 +29,20 @@ class FDM(object):
         if(len(mininet.hosts)==1):
             self.server=mininet.hosts[0].name
         else:
-            info('more than one hosts in Mininet')
+            info('more than one hosts in Mininet\n')
             exit(0)
         #string of hub name
         self.hub=""
         for intf in mininet.nameToNode[self.server].intfList():
-            if intf:
+            if intf.link:
                 intfs=[intf.link.intf1,intf.link.intf2]
                 intfs.remove(intf)
-                self.hub=intfs[0].node.name
+                if(intfs[0]!='wireless'):
+                    if(intfs[0].node not in mininet.switches or self.hub!=""):
+                        info('hub violation\n')
+                        #print(intfs[0].node.name, mininet.switches, self.hub)
+                        exit(0)
+                    self.hub=intfs[0].node.name
         info('hub name is:')
         print(self.hub)
         #connectivity is a dict{string link pair: value 1/0}
@@ -106,24 +111,45 @@ class FDM(object):
                     intfs.remove(intf)
                     if (intfs[0] != 'wireless'):
                         otherEnd = intfs[0].node
-                        if (otherEnd in mininet.switches and Net.name not in self.backbones):
+                        if (otherEnd in mininet.switches):
+                            if(Net.name in self.backbones):
+                                info("net ",Net.name," connected to multiple backbones\n")
+                                exit(0)
                             self.backbones[Net.name] = otherEnd.name
                             key = Net.name + '-' + otherEnd.name
                             self.connectivity[key] = 1
                             self.linkToIntf[key] = intf.name
-                            key2 = otherEnd.name + '-' + self.hub
-                            self.connectivity[key2] = 1
+                            #validate backbone node
+                            for b_intf in otherEnd.intfList():
+                                if(b_intf.name!='lo'):
+                                    b_intfs=[b_intf.link.intf1, b_intf.link.intf2]
+                                    b_intfs.remove(b_intf)
+                                    tmpEnd=b_intfs[0].node
+                                    if tmpEnd in mininet.switches or tmpEnd in mininet.aps:
+                                        if( tmpEnd.name not in self.nets and tmpEnd.name!= self.hub):
+                                            info('backbone node ',otherEnd.name,' connected to unknown node\n')
+                                            exit(0)
+                                        if(tmpEnd.name not in self.nets):
+                                            key2 = otherEnd.name + '-' + self.hub
+                                            self.connectivity[key2] = 1
+                                            self.linkToIntf[key2]=b_intf
 
-        key=self.hub+'-'+self.server
-        self.connectivity[key]=1
+        for intf in mininet.nameToNode[self.hub].intfList():
+            if(intf.name!='lo'):
+                intfs=[intf.link.intf1, intf.link.intf2]
+                intfs.remove(intf)
+                if(intfs[0].node.name==self.server):
+                    key=self.hub+'-'+self.server
+                    self.connectivity[key]=1
+                    self.linkToIntf[key]=intf
 
-        info("connecitvities:")
+        info("connecitvities:\n")
         print(self.connectivity)
-        info("IP tables:")
+        info("IP tables:\n")
         print(self.IPTable)
-        info("link and interfaces:")
+        info("link and interfaces:\n")
         print(self.linkToIntf)
-        info("backbones")
+        info("backbones\n")
         print(self.backbones)
 
         thread=threading.Thread(target=self.checkChange, args=(start, end, interval))
@@ -177,7 +203,7 @@ class FDM(object):
             print(changeList)
             if(len(changeList)>0):
             #run FDM
-                self.run_FDM(changeList)
+                self.run_FDM(self.users)
 
             time.sleep(interval)
 
@@ -223,7 +249,7 @@ class FDM(object):
             if(i==server):
                 names[i]=self.server
 
-        info(names)
+        info(names,'\n\n')
         #Addling links
         v_pairs=[]
         for i in range(n_host-1):
@@ -256,7 +282,7 @@ class FDM(object):
             key=end_to_backbone[i+n_net]+'-'+names[hub]
             v_pair={}
             if(key in self.connectivity):
-                v_pair['End1']=i
+                v_pair['End1']=i+n_net
                 v_pair['End2']=hub
                 if(key in self.delay):
                     v_pair['delay']=self.delay[key]
@@ -264,9 +290,11 @@ class FDM(object):
                     v_pair['cap']=self.capacity[key]
                 v_pairs.append(v_pair)
         if True:
-            key = names[hub] + names[server]
+            key = names[hub] +'-'+ names[server]
+            info('hub and server: ',key,'\n','\n\n')
             v_pair={}
             if (key in self.connectivity):
+                info('add hub server key\n\n')
                 v_pair['End1'] = hub
                 v_pair['End2'] = server
                 if (key in self.delay):
@@ -277,21 +305,25 @@ class FDM(object):
 
         nl=len(v_pairs)
         info('got v_pairs\n')
-        info(v_pairs)
+        info(v_pairs,'\n')
+        info(self.connectivity,'\n')
         Adj=[[] for i in range(nn)]
-        End1, End2, Cap, Cost, Offset, Gflow, Eflow, Pflow, FDlen, NewCap=([0 for j in range(nl)] for i in range(10))
-        SPdist, SPpred=([[0 for k in range(nn)] for i in range(nn)] for i in range(2))
+        End1, End2 =([0 for j in range(nl)] for i in range(2))
+        Cap, Cost, Offset, Gflow, Eflow, Pflow, FDlen, NewCap=([float(0) for j in range(nl)] for i in range(8))
+
+        SPdist = [[float(0) for k in range(nn)]for i in range(nn)]
+        SPpred = [[0 for k in range(nn)]for i in range(nn)]
 
         for idx, it in enumerate(v_pairs):
-            End1.append(it['End1'])
-            End2.append(it['End2'])
+            End1[idx]=it['End1']
+            End2[idx]=it['End2']
             Adj[it['End1']].append(idx)
             if('delay' in it):
-                Cost[idx]=it['delay']
+                Cost[idx]=float(it['delay'])
             else:
-                Cost[idx]=0
+                Cost[idx]=float(0)
             if('cap' in it):
-                Cap[idx]=it['cap']
+                Cap[idx]=float(it['cap'])
             else:
                 Cap[idx]=float("inf")
             Offset[idx]=-1
@@ -299,18 +331,19 @@ class FDM(object):
                 if(host_to_user[it['End1']] not in changeList):
                     key=host_to_user[it['End1']]+'-'+wireless_to_net[it['End2']]
                     if(key in self.prev_flow):
-                        Offset[idx]=self.prev_flow[key]
-
+                        Offset[idx]=float(self.prev_flow[key])
+        info("Adj is: \n\n")
+        info(Adj,'\n\n')
         Gtable, Etable = ([{} for i in range(nl)] for j in range(2))
         MsgLen='1000B'
         PreviousDelay=float("inf")
-        Req=[[0 for i in range(nn)]for j in range(nn)]
-        MM_Req = [[0 for i in range(nn)] for j in range(nn)]
+        Req=[[float(0) for i in range(nn)]for j in range(nn)]
+        MM_Req = [[float(0) for i in range(nn)] for j in range(nn)]
         TotReq=0
         for i in range(n_host-1):
-            Req[i][server]=self.demand[host_to_user[i]]
+            Req[i][server]=float(self.demand[host_to_user[i]])
             TotReq+=Req[i][server]
-        return
+
         ###FDM algorithm
 
         #Initialize Gflow
@@ -318,6 +351,8 @@ class FDM(object):
         if(not quickStart):
             self.SetLinkLens(nl, Gflow, Cap, MsgLen, FDlen, Cost, Offset)
             self.SetSP(nn, End2, FDlen, Adj, SPdist, SPpred)
+            info("Predecessors:\n")
+            info(SPpred,'\n\n')
             self.LoadLinks(nn,nl,Req,SPpred,End1,Gflow,Gtable,names)
         else:
             #Quick start
@@ -351,7 +386,7 @@ class FDM(object):
             Aflag=1
         CurrentDelay=self.CalcDelay(nl, Gflow, NewCap, MsgLen, TotReq, Cost, Offset)
         ori_delay=self.CalcDelay_ori(nl, Gflow, NewCap, MsgLen, TotReq, Cost)
-        info(CurrentDelay, " ", ori_delay)
+        info(CurrentDelay, " ", ori_delay,'\n')
 
         delta, rho, step, gamma=[0.2, 0.2, 5, 2]
         req=TotReq/len(self.users)
@@ -363,7 +398,7 @@ class FDM(object):
         feasible=1
         while(Aflag or (CurrentDelay<PreviousDelay*(1-self.EPSILON))):
             self.SetLinkLens(nl, Gflow, NewCap, MsgLen, FDlen, Cost, Offset)
-            self.SP(nn, End2, FDlen, Adj, SPdist, SPpred)
+            self.SetSP(nn, End2, FDlen, Adj, SPdist, SPpred)
             self.LoadLinks(nn, nl, Req, SPpred, End1, Eflow, Etable, names)
             PreviousDelay=self.CalcDelay(nl, Gflow, NewCap, MsgLen, TotReq, Cost, Offset)
             self.Superpose(nl, Eflow, Gflow, NewCap, TotReq, MsgLen, Cost, Offset, Gtable, Etable)
@@ -378,16 +413,19 @@ class FDM(object):
 
             CurrentDelay=self.CalcDelay(nl, Gflow, NewCap, MsgLen, TotReq, Cost, Offset)
             ori_delay = self.CalcDelay_ori(nl, Gflow, NewCap, MsgLen, TotReq, Cost)
-            info(CurrentDelay, " ", ori_delay)
+            info(CurrentDelay, " ", ori_delay,'\n')
             if((Aflag==1 and (CurrentDelay>=PreviousDelay*(1-self.EPSILON))) or count>=100000):
                 info('Problem is infeasible')
                 feasible=0
                 break
             count+=1
+            info(count,'\n')
         if(feasible):
             '''Printing flow tables and stuff'''
+            info('FDM success\n')
         else:
             '''Max-min reduce request'''
+            info('FDM success infeasible\n')
 
 
 
@@ -397,31 +435,214 @@ class FDM(object):
 
 
     def SetLinkLens(self, nl, Flow, Cap, MsgLen, Len, Cost, Off):
+        for l in range(nl):
+            Len[l]=self.DerivDelay(Flow[l],Cap[l],MsgLen,Cost[l],Off[l])
         return
+
     def SetSP(self, nn, End2, Len, Adj, SPdist, SPpred):
+        for node in range(nn):
+            self.Bellman(nn,node,End2,Len,Adj,SPpred[node],SPdist[node])
         return
+
     def Bellman(self, nn, root, End2, LinkLength, Adj, Pred, Dist):
+        #info("initial pred:\n")
+        #info(Pred,'\n')
+        hop=[0 for i in range(nn)]
+        for i in range(nn):
+            Dist[i]=float("inf")
+        Dist[root]=0
+        Pred[root]=root
+
+        stack=[root]
+        #info("root is: ",root,'\n')
+        while(len(stack)):
+            node=stack.pop()
+            #info(node,'\n')
+            #info("adj of node is: ",Adj[node],'\n')
+            for i in range(len(Adj[node])):
+                curlink=Adj[node][i]
+                #info("curlink is: ",curlink,'\n')
+                node2=End2[curlink]
+                #info("node2 is: ",node2,'\n')
+                d=Dist[node]+LinkLength[curlink]
+                if(Dist[node2]>d):
+                    Dist[node2]=d
+                    Pred[node2]=curlink
+                    hop[node2]=hop[node]+1
+                    #if(hop[node2]<xxx
+                    stack.append(node2)
+        #info("final pred:\n")
+        #info(Pred,'\n')
         return
+
     def LoadLinks(self, nn, nl, Req, SPpred, End1, Flow, Table, Names):
+        for i in range(nl):
+            Flow[i]=0
+            Table[i].clear()
+        for s in range(nn):
+            for d in range(nn):
+                if(Req[s][d]>0):
+                    m=d
+                    path_node=[m]
+                    path_link=[]
+                    while(m!=s):
+                        link=SPpred[s][m]
+                        p=End1[link]
+                        path_node.append(p)
+                        path_link.append(link)
+                        m=p
+
+                    key=Names[s]+'-'+Names[path_node[-2]]
+                    #print(path_node,"key is: ",key)
+                    ip=self.IPTable[self.linkToIntf[key]]
+                    for k in range(len(path_link)):
+                        Flow[path_link[k]]+=Req[s][d]
+                        Table[path_link[k]][ip]=Req[s][d]
         return
+
     def LoadLInksInCL(self,src, dst, req, SPpred, End1, Flow, Table, Names):
+        m=dst
+        path_node=[dst]
+        path_link=[]
+        while m != src:
+            link=SPpred[src][m]
+            p=End1[link]
+            path_node.append(p)
+            path_link.append(link)
+            m=p
+        key=Names[src]+'-'+Names[path_node[-2]]
+        ip=self.IPTable[self.linkToIntf[key]]
+        for k in range(len(path_link)):
+            Flow[path_link[k]]+= req
+            Table[path_link[k]][ip]+=req
         return
+
     def AdjustCaps(self, nl, Flow, Cap, NewCap):
-        return 0
+        factor=1
+        for i in range(nl):
+            factor=max(factor,(1+self.DELTA)*Flow[i]/Cap[i])
+        for i in range(nl):
+            NewCap[i]=factor*Cap[i]
+        return factor
+
     def CalcDelay(self, nl, Flow, Cap, MsgLen, TotReq, Cost, Off):
-        return 0
+        sum, norm=[0.0,0.0]
+        for i in range(nl):
+            sum+=Flow[i]*self.LinkDelay(Flow[i],Cap[i],MsgLen,Cost[i])
+            if(Off[i]>=0):
+                norm+=self.alpha*(Flow[i]-Off[i])*(Flow[i]-Off[i])
+        return sum/TotReq
+
     def Superpose(self, nl, Eflow, Gflow, Cap, TotReq, MsgLen, Cost, Off, Gtable, Etable):
+        x=self.FindX(nl,Gflow,Eflow,Cap,TotReq,MsgLen,Cost,Off)
+        for l in range(nl):
+            Gflow[l]=x*Eflow[l]+(1-x)*Gflow[l]
+            for it in Gtable[l]:
+                Gtable[l][it]*=(1-x)
+            for it in Etable[l]:
+                if it not in Gtable[l]:
+                    Gtable[l][it]=Etable[l][it]*x
+                else:
+                    Gtable[l][it]+=Etable[l][it]*x
         return
+
     def FindX(self, nl, Gflow, Eflow, Cap, TotReq, MsgLen, Cost, Off):
-        return 0
+        st,end=[0.0,1.0]
+        xlimit=float(0)
+        Flow=[float(0) for i in range(nl)]
+        while (end-st)>0.0001:
+            exc=False
+            xlimit=(st+end)/2
+            for i in range(nl):
+                Flow[i]=xlimit*Eflow[i]+(1-xlimit)*Gflow[i]
+                if(Flow[i]>Cap[i]):
+                    exc=True
+                    break
+            if(exc):
+                end=xlimit
+            else:
+                st=xlimit
+        xlimit=st
+
+        x0=0.0
+        f0=self.DelayF(x0,nl,Eflow,Gflow,Cap,MsgLen,TotReq,Cost,Off)
+        x4=xlimit
+        f4=self.DelayF(x4,nl,Eflow,Gflow,Cap,MsgLen,TotReq,Cost,Off)
+        x2=(x0+x4)/2
+        f2=self.DelayF(x2,nl,Eflow,Gflow,Cap,MsgLen,TotReq,Cost,Off)
+
+        while((x4-x0)>self.EPSILON):
+            x1=(x0+x2)/2
+            f1 = self.DelayF(x1, nl, Eflow, Gflow, Cap, MsgLen, TotReq, Cost, Off)
+            x3 = (x2 + x4) / 2
+            f3 = self.DelayF(x3, nl, Eflow, Gflow, Cap, MsgLen, TotReq, Cost, Off)
+            if((f0<=f1)or(f1<=f2)):
+                x4=x2
+                x2=x1
+                f4=f2
+                f2=f1
+            elif f2<=f3:
+                x0=x1
+                x4=x3
+                f0=f1
+                f4=f3
+            else:
+                x0=x2
+                x2=x3
+                f0=f2
+                f2=f3
+        if((f0<=f2)and(f0<=f4)):
+            return x0
+        elif f2<=f4:
+            return x2
+        else:
+            return f4
+    def convertMsgLen(self,MsgLen):
+        pos=0
+        for idx,char in enumerate(MsgLen):
+            if char.isalpha():
+                pos=idx
+                break
+
+        unit=MsgLen[pos:]
+        value=float(MsgLen[:pos])
+        if unit=='b':
+            return value
+        elif unit=='B':
+            return value*8
+        elif unit=='Kb':
+            return value*1000
+        elif unit=='KB':
+            return value*8000
+        elif unit=='Mb':
+            return value*(10**6)
+        elif unit=='MB':
+            return value*8*(10**6)
+        else:
+            info('MsgLen unit error')
+            exit(0)
+
     def LinkDelay(self, Flow, Cap, MsgLen, Cost):
-        return 0
+        return self.convertMsgLen(MsgLen)/(Cap*10**6)/(1-Flow/Cap)+Cost
+
     def DerivDelay(self, Flow, Cap, MsgLen, Cost, Off):
-        return 0
+        f=1-Flow/Cap
+        norm=float(0)
+        if(Off>=0):
+            norm=self.alpha*2*(Flow-Off)
+        return (self.convertMsgLen(MsgLen)/(Cap*10**6))/(f*f)+Cost+norm
+
     def DelayF(self, x, nl, Eflow, Gflow, Cap, MsgLen, TotReq, Cost, Off):
-        return 0
+        Flow=[float(0) for i in range(nl)]
+        for l in range(nl):
+            Flow[l]=x*Eflow[l]+(1-x)*Gflow[l]
+        return self.CalcDelay(nl,Flow,Cap,MsgLen,TotReq,Cost,Off)
+
     def CalcDelay_ori(self, nl, Flow, Cap, MsgLen, TotReq, Cost):
-        return 0
+        sum=0.0
+        for u in range(nl):
+            sum+=Flow[u]*self.LinkDelay(Flow[u],Cap[u],MsgLen,Cost[u])
+        return sum/TotReq
 
 
 
