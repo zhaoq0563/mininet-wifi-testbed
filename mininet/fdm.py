@@ -155,7 +155,7 @@ class FDM(object):
             if key not in self.connectivity:
                 info('delay key does not match any link in connectivity\n')
                 exit(0)
-        
+
         info("connecitvities:\n")
         print(self.connectivity)
         info("IP tables:\n")
@@ -181,8 +181,9 @@ class FDM(object):
             #initialize new connectivity
             for user in self.users:
                 for net in self.nets:
-                    key = user + '-' + net
-                    new_conn[key] = 0
+                    if(self.mn.nameToNode[net] not in self.mn.switches):
+                        key = user + '-' + net
+                        new_conn[key] = 0
 
 
             for user in self.users:
@@ -427,14 +428,16 @@ class FDM(object):
             CurrentDelay=self.CalcDelay(nl, Gflow, NewCap, MsgLen, TotReq, Cost, Offset)
             ori_delay = self.CalcDelay_ori(nl, Gflow, NewCap, MsgLen, TotReq, Cost)
             info(CurrentDelay, " ", ori_delay,'\n')
+            CurrentDelay=tmp_delay
             if((Aflag==1 and (CurrentDelay>=PreviousDelay*(1-self.EPSILON))) or count>=100000):
-                info('Problem is infeasible')
+                info('Problem is infeasible\n')
                 feasible=0
                 break
             count+=1
             info(count,'\n')
         if(feasible):
             '''Printing flow tables and stuff'''
+            print(Gtable)
             info('FDM success\n')
         else:
             '''Max-min reduce request'''
