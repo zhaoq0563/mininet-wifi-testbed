@@ -18,7 +18,7 @@ class FDM(object):
     STEP=0.05
 
     def __init__(self, mininet, users, nets, demand={}, capacity={}, delay={},
-                 start=0, end=600, interval=5):
+                 start=0, end=600, interval=5, use_fdm=True):
         self.mn = mininet
         #string list of sta names
         self.users = users
@@ -64,6 +64,7 @@ class FDM(object):
         self.delay=delay
         self.alpha = 0
         self.global_opt=0
+        self.use_fdm=use_fdm
         #initialize AP related
         for user in users:
             for net in nets:
@@ -73,7 +74,7 @@ class FDM(object):
         for user in users:
             sta=mininet.nameToNode[user]
             staid=user.lstrip('sta')
-            ip='10.0.'+staid+'.0'
+            ip='10.0.'+str(int(staid)+1)+'.0'
             #deal with AP
             for idx, wlan in enumerate( sta.params['wlan']):
                 self.IPTable[wlan]=ip
@@ -506,9 +507,16 @@ class FDM(object):
                         Qcommand+=" queues:"+str(idx+cnt)+"=@q"+str(idx+cnt)+" "
                     Qcommand+='-- '
                     for idx,k in enumerate(Gtable[link]):
-                        Qcommand+="--id=@q"+str(idx+cnt)+" create Queue other-config:min-rate="+\
-                            str(int(float(Gtable[link][k])*(10**6)))+" other-config:max-rate="+\
-                            str(int(float(Gtable[link][k])*(10**6)))+" -- "
+                        if(self.use_fdm):
+                            Qcommand+="--id=@q"+str(idx+cnt)+" create Queue other-config:min-rate="+\
+                                str(int(float(Gtable[link][k])*(10**6)))+" other-config:max-rate="+\
+                                str(int(float(Gtable[link][k])*(10**6)))+" -- "
+                        else:
+                            userid=int(k.split('.')[2])-1
+                            user='sta'+str(userid)
+                            Qcommand += "--id=@q" + str(idx + cnt) + " create Queue other-config:min-rate=" + \
+                                        str(int(float(self.demand[user]) * (10 ** 6))) + " other-config:max-rate=" + \
+                                        str(int(float(self.demand[user]) * (10 ** 6))) + " -- "
                         FTcommand = "sudo ovs-ofctl add-flow " + names[n] + " ip,nw_src=" + k + "/32,actions=set_queue:" + \
                                     str(idx + cnt) + ",output:" + intf_num
                         netFTConfig.write(FTcommand + '\n')
@@ -650,7 +658,7 @@ class FDM(object):
             sum+=Flow[i]*self.LinkDelay(Flow[i],Cap[i],MsgLen,Cost[i])
             if(Off[i]>=0):
                 norm+=self.alpha*(Flow[i]-Off[i])*(Flow[i]-Off[i])
-        return sum/TotReq
+        return sum/TotReq+norm
 
     def Superpose(self, nl, Eflow, Gflow, Cap, TotReq, MsgLen, Cost, Off, Gtable, Etable):
         x=self.FindX(nl,Gflow,Eflow,Cap,TotReq,MsgLen,Cost,Off)
@@ -742,14 +750,14 @@ class FDM(object):
             exit(0)
 
     def LinkDelay(self, Flow, Cap, MsgLen, Cost):
-        return self.convertMsgLen(MsgLen)/(Cap*10**6)/(1-Flow/Cap)+Cost
+        return self.convertMsgLen(MsgLen)/(Cap*10**6)/(1-Flow/Cap)+float(Cost)/1000
 
     def DerivDelay(self, Flow, Cap, MsgLen, Cost, Off):
         f=1-Flow/Cap
         norm=float(0)
         if(Off>=0):
             norm=self.alpha*2*(Flow-Off)
-        return (self.convertMsgLen(MsgLen)/(Cap*10**6))/(f*f)+Cost+norm
+        return (self.convertMsgLen(MsgLen)/(Cap*10**6))/(f*f)+float(Cost)/1000+norm
 
     def DelayF(self, x, nl, Eflow, Gflow, Cap, MsgLen, TotReq, Cost, Off):
         Flow=[float(0) for i in range(nl)]
