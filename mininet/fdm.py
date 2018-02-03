@@ -509,16 +509,17 @@ class FDM(object):
                     for idx,k in enumerate(Gtable[link]):
                         if(self.use_fdm):
                             Qcommand+="--id=@q"+str(idx+cnt)+" create Queue other-config:min-rate="+\
-                                str(int(float(Gtable[link][k])*(10**6)))+" other-config:max-rate="+\
-                                str(int(float(Gtable[link][k])*(10**6)))+" -- "
+                                str(int(float(Gtable[link][k])*0.9*(10**6)))+" other-config:max-rate="+\
+                                str(int(float(Gtable[link][k])*1.2*(10**6)))+" -- "
+                            FTcommand = "sudo ovs-ofctl add-flow " + names[n] + " ip,nw_src=" + k + "/32,actions=set_queue:" + \
+                                        str(idx + cnt) + ",output:" + intf_num
                         else:
                             userid=int(k.split('.')[2])-1
                             user='sta'+str(userid)
                             Qcommand += "--id=@q" + str(idx + cnt) + " create Queue other-config:min-rate=" + \
                                         str(int(float(self.demand[user]) * (10 ** 6))) + " other-config:max-rate=" + \
                                         str(int(float(self.demand[user]) * (10 ** 6))) + " -- "
-                        FTcommand = "sudo ovs-ofctl add-flow " + names[n] + " ip,nw_src=" + k + "/32,actions=set_queue:" + \
-                                    str(idx + cnt) + ",output:" + intf_num
+                            FTcommand = "sudo ovs-ofctl add-flow " + names[n] + " ip,nw_src=" + k + "/32,actions=output:"+ intf_num
                         netFTConfig.write(FTcommand + '\n')
                     Qcommand=Qcommand.rstrip('-- ')+'\n'
                     netQConfig.write(Qcommand)
