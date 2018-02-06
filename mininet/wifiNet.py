@@ -931,7 +931,6 @@ class mininetWiFi(object):
                     node.params['position'] = 0, 0, 0
             kwargs['stationaryNodes'] = stationaryNodes
             params = cls.setMobilityParams(**kwargs)
-            print "!!!!!!!!!!!!!!!!!!!!----" + params
             if cls.nroads == 0:
                 mobility.start(**params)
             else:
