@@ -623,14 +623,14 @@ class FDM(object):
                         intf=used_wifi[0]
                         print("default interface: ",intf)
                         sta.cmdPrint("ip route change default scope global nexthop via "+self.IPTable[intf] +" dev "+  intf)
-                        #sta.cmdPrint("kill $PID")
-                        #self.ITGTest(sta,self.mn.nameToNode[self.server], self.demand[user],self.end)
+                        sta.cmdPrint("kill $PID")
+                        self.ITGTest(sta,self.mn.nameToNode[self.server], self.demand[user]*250,self.end)
                     elif len(used_lte)>0:
                         intf=used_lte[0]
                         print("default interface: ", intf)
                         sta.cmdPrint("ip route change default scope global nexthop via "+self.IPTable[intf] +" dev "+  intf)
                         sta.cmdPrint("kill $PID")
-                        self.ITGTest(sta,self.mn.nameToNode[self.server], self.demand[user],self.end)
+                        self.ITGTest(sta,self.mn.nameToNode[self.server], self.demand[user]*250,self.end)
                     else:
                         info("user ",user, "has no network\n")
                         exit(0)
@@ -643,7 +643,7 @@ class FDM(object):
     def ITGTest(client, server, bw, sTime):
         info('Sending message from ', client.name, '<->', server.name, '\n')
         client.cmd('pushd ~/D-ITG-2.8.1-r1023/bin')
-        client.cmd('./ITGSend -T TCP -a 10.0.0.1 -c 1000 -O ' + str(bw) + ' -t ' + str(sTime) + ' -l log/' + str(
+        client.cmd('./ITGSend -T TCP -a 10.0.0.1 -c 500 -O ' + str(bw) + ' -t ' + str(sTime) + ' -l log/' + str(
             client.name) + '.log -x log/' + str(client.name) + '-' + str(server.name) + '.log &')
         client.cmdPrint('PID=$!')
         client.cmd('popd')
