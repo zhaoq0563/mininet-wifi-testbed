@@ -219,8 +219,8 @@ class FDM(object):
                                 self.capacity[key]=cap
                                 self.delay[key]=latency
 
-                        print(key + " new capacity is: ", cap)
-                        print(key + " new latency is: ", latency)
+                        #print(key + " new capacity is: ", cap)
+                        #print(key + " new latency is: ", latency)
 
             '''check sptcp user wlan disconnection'''
             for user in self.users:
@@ -285,7 +285,7 @@ class FDM(object):
             if(i==server):
                 names[i]=self.server
 
-        info(names,'\n\n')
+        #info(names,'\n\n')
         #Addling links
         v_pairs=[]
         for i in range(n_host-1):
@@ -460,7 +460,7 @@ class FDM(object):
         if(feasible):
             '''Printing flow tables and stuff'''
 
-            print(Gtable)
+            #print(Gtable)
             info('FDM success\n')
 
             '''Generate Flowtable and queues'''
@@ -522,7 +522,7 @@ class FDM(object):
                         Qcommand+=" queues:"+str(idx+cnt)+"=@q"+str(idx+cnt)+" "
                     Qcommand+='-- '
                     for idx,k in enumerate(Gtable[link]):
-                        if(self.protocol=='FDM' or self.use_fdm):
+                        if(self.use_fdm):
                             Qcommand+="--id=@q"+str(idx+cnt)+" create Queue other-config:min-rate="+\
                                 str(int(float(Gtable[link][k])*0.9*(10**6)))+" other-config:max-rate="+\
                                 str(int(float(Gtable[link][k])*1.2*(10**6)))+" -- "
@@ -629,8 +629,8 @@ class FDM(object):
                         intf=used_lte[0]
                         print("default interface: ", intf)
                         sta.cmdPrint("ip route change default scope global nexthop via "+self.IPTable[intf] +" dev "+  intf)
-                        #sta.cmdPrint("kill $PID")
-                        #self.ITGTest(sta,self.mn.nameToNode[self.server], self.demand[user],self.end)
+                        sta.cmdPrint("kill $PID")
+                        self.ITGTest(sta,self.mn.nameToNode[self.server], self.demand[user],self.end)
                     else:
                         info("user ",user, "has no network\n")
                         exit(0)
