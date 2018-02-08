@@ -457,71 +457,76 @@ class FDM(object):
                 break
             count+=1
             info(count,'\n')
+
         if(feasible):
             '''Printing flow tables and stuff'''
 
             #print(Gtable)
             info('FDM success\n')
+        else:
+            info('FDM success infeasible\n')
 
-            '''Generate Flowtable and queues'''
-            ft_book=[{} for i in range(nn)]
-            for i in range(nl):
-                end1=End1[i]
-                end2=End2[i]
-                key=names[end1]+'-'+names[end2]
-                if end1 not in host_to_user:
-                    if 'out' not in ft_book[end1]:
-                        ft_book[end1]['out']=[]
-                    if 'in' not in ft_book[end2]:
-                        ft_book[end2]['in']=[]
-                    ft_book[end1]['out'].append(self.linkToIntf[key][0])
-                    ft_book[end2]['in'].append(self.linkToIntf[key][1])
+        '''Generate Flowtable and queues'''
+        ft_book=[{} for i in range(nn)]
+        for i in range(nl):
+            end1=End1[i]
+            end2=End2[i]
+            key=names[end1]+'-'+names[end2]
+            if end1 not in host_to_user:
+                if 'out' not in ft_book[end1]:
+                    ft_book[end1]['out']=[]
+                if 'in' not in ft_book[end2]:
+                    ft_book[end2]['in']=[]
+                ft_book[end1]['out'].append(self.linkToIntf[key][0])
+                ft_book[end2]['in'].append(self.linkToIntf[key][1])
 
-            backFTConfig=[]
+        backFTConfig=[]
 
-            if backboneFT:
-                backFTConfig= open("flowTable/backFTConfig.sh", "w")
-                backFTConfig.write("#!/bin/bash\n\n")
+        if backboneFT:
+            backFTConfig= open("flowTable/backFTConfig.sh", "w")
+            backFTConfig.write("#!/bin/bash\n\n")
 
-            cnt=1
-            for n in range(nn):
-                if n not in wireless_to_net and n not in host_to_user and n !=server and backboneFT:
-                    '''generate static backhaul flow table'''
-                    if(len(ft_book[n]['out'])>1):
-                        info('backhaul node ',names[n],' output port number larger than 2\n')
-                        print(ft_book[n]['out'])
-                        exit(0)
-                    outport=ft_book[n]['out'][0]
-                    sw,intf1=outport.split('-')
-                    intf1_num=intf1[3:]
-                    for port in ft_book[n]['in']:
-                        sw,intf2=port.split('-')
-                        intf2_num=intf2[3:]
-                        command="sudo ovs-ofctl add-flow "+names[n]+" in_port="+intf2_num+\
-                            ",actions=output:"+intf1_num
-                        backFTConfig.write(command+'\n')
-                    command="sudo ovs-ofctl add-flow "+names[n]+" in_port="+intf1_num+\
-                        ",actions=normal"
+        cnt=1
+        for n in range(nn):
+            if n not in wireless_to_net and n not in host_to_user and n !=server and backboneFT:
+                '''generate static backhaul flow table'''
+                if(len(ft_book[n]['out'])>1):
+                    info('backhaul node ',names[n],' output port number larger than 2\n')
+                    print(ft_book[n]['out'])
+                    exit(0)
+                outport=ft_book[n]['out'][0]
+                sw,intf1=outport.split('-')
+                intf1_num=intf1[3:]
+                for port in ft_book[n]['in']:
+                    sw,intf2=port.split('-')
+                    intf2_num=intf2[3:]
+                    command="sudo ovs-ofctl add-flow "+names[n]+" in_port="+intf2_num+\
+                        ",actions=output:"+intf1_num
                     backFTConfig.write(command+'\n')
-                    command="sudo ovs-ofctl add-flow "+names[n]+" priority=100,actions=normal\n"
-                    backFTConfig.write(command)
-                elif n in wireless_to_net:
-                    '''generate dynamic net flow and queue tables'''
-                    netFTConfig = open("flowTable/netFTConfig_"+names[n]+".sh", "w")
-                    netQConfig = open("flowTable/netQConfig_"+names[n]+".sh", "w")
-                    netFTConfig.write("#!/bin/bash\n\n")
-                    netQConfig.write("#!/bin/bash\n\n")
-                    outport=ft_book[n]['out'][0]
-                    sw,intf=outport.split('-')
-                    intf_num=intf[3:]
-                    link=Adj[n][0]
-                    Qcommand="sudo ovs-vsctl -- set Port "+outport+" qos=@newqos -- --id=@newqos"+\
-                        " create QoS type=linux-htb other-config:max-rate=100000000 "
+                command="sudo ovs-ofctl add-flow "+names[n]+" in_port="+intf1_num+\
+                    ",actions=normal"
+                backFTConfig.write(command+'\n')
+                command="sudo ovs-ofctl add-flow "+names[n]+" priority=100,actions=normal\n"
+                backFTConfig.write(command)
+            elif n in wireless_to_net:
+                '''generate dynamic net flow and queue tables'''
+                netFTConfig = open("flowTable/netFTConfig_"+names[n]+".sh", "w")
+                netQConfig = open("flowTable/netQConfig_"+names[n]+".sh", "w")
+                netFTConfig.write("#!/bin/bash\n\n")
+                netQConfig.write("#!/bin/bash\n\n")
+                outport=ft_book[n]['out'][0]
+                sw,intf=outport.split('-')
+                intf_num=intf[3:]
+                link=Adj[n][0]
+                Qcommand="sudo ovs-vsctl -- set Port "+outport+" qos=@newqos -- --id=@newqos"+\
+                    " create QoS type=linux-htb other-config:max-rate=100000000 "
 
-                    for idx in range(len(Gtable[link])):
+                for idx,k in enumerate(Gtable[link]):
+                    if(float(Gtable[link][k])>10**-4):
                         Qcommand+=" queues:"+str(idx+cnt)+"=@q"+str(idx+cnt)+" "
-                    Qcommand+='-- '
-                    for idx,k in enumerate(Gtable[link]):
+                Qcommand+='-- '
+                for idx,k in enumerate(Gtable[link]):
+                    if (float(Gtable[link][k]) > 10 ** -4):
                         if(self.use_fdm):
                             Qcommand+="--id=@q"+str(idx+cnt)+" create Queue other-config:min-rate="+\
                                 str(int(float(Gtable[link][k])*0.9*(10**6)))+" other-config:max-rate="+\
@@ -536,116 +541,120 @@ class FDM(object):
                                         str(int(float(self.demand[user]) * (10 ** 6))) + " -- "
                             FTcommand = "sudo ovs-ofctl add-flow " + names[n] + " ip,nw_src=" + k + "/32,actions=output:"+ intf_num
                         netFTConfig.write(FTcommand + '\n')
-                    Qcommand=Qcommand.rstrip('-- ')+'\n'
-                    netQConfig.write(Qcommand)
-                    Qcommand="sudo ovs-ofctl -O Openflow13 queue-stats "+names[n]+'\n'
-                    netQConfig.write(Qcommand)
-                    FTcommand="sudo ovs-ofctl add-flow "+names[n]+" in_port="+intf_num+",actions=normal\n"
-                    netFTConfig.write(FTcommand)
-                    FTcommand="sudo ovs-ofctl add-flow "+names[n]+" priority=100,actions=normal\n"
-                    netFTConfig.write(FTcommand)
-                    cnt+=len(Gtable[link])
-                    netFTConfig.close()
-                    call(["sudo", "chmod", "777", "flowTable/netFTConfig_"+names[n]+".sh"])
-                    netQConfig.close()
-                    call(["sudo", "chmod", "777", "flowTable/netQConfig_"+names[n]+".sh"])
+                Qcommand=Qcommand.rstrip('-- ')+'\n'
+                netQConfig.write(Qcommand)
+                Qcommand="sudo ovs-ofctl -O Openflow13 queue-stats "+names[n]+'\n'
+                netQConfig.write(Qcommand)
+                FTcommand="sudo ovs-ofctl add-flow "+names[n]+" in_port="+intf_num+",actions=normal\n"
+                netFTConfig.write(FTcommand)
+                FTcommand="sudo ovs-ofctl add-flow "+names[n]+" priority=100,actions=normal\n"
+                netFTConfig.write(FTcommand)
+                cnt+=len(Gtable[link])
+                netFTConfig.close()
+                call(["sudo", "chmod", "777", "flowTable/netFTConfig_"+names[n]+".sh"])
+                netQConfig.close()
+                call(["sudo", "chmod", "777", "flowTable/netQConfig_"+names[n]+".sh"])
 
-            if backboneFT:
-                backFTConfig.close()
-                call(["sudo","chmod","777","flowTable/backFTConfig.sh"])
-                call(["sudo","bash","flowTable/backFTConfig.sh"])
-            '''remove tables and queues and apply new ones'''
-            info('*** remove net qos, queue, and flow tables ***\n')
-            for net in self.nets:
-                Net=self.mn.nameToNode[net]
-                Net.cmdPrint('sudo ovs-vsctl clear port %s qos'% ft_book[net_to_wireless[net]]['out'][0])
-            #print('weird, who is Net???')
-            Net.cmdPrint('sudo ovs-vsctl --all destroy qos')
-            Net.cmdPrint('sudo ovs-vsctl --all destroy queue')
-            for net in self.nets:
-                Net = self.mn.nameToNode[net]
-                Net.cmdPrint('sudo ovs-ofctl del-flows %s' % net)
-                call(["sudo","bash","flowTable/netFTConfig_"+net+".sh"])
-                call(["sudo", "bash", "flowTable/netQConfig_" + net + ".sh"])
+        if backboneFT:
+            backFTConfig.close()
+            call(["sudo","chmod","777","flowTable/backFTConfig.sh"])
+            call(["sudo","bash","flowTable/backFTConfig.sh"])
+        '''remove tables and queues and apply new ones'''
+        info('*** remove net qos, queue, and flow tables ***\n')
+        for net in self.nets:
+            Net=self.mn.nameToNode[net]
+            Net.cmdPrint('sudo ovs-vsctl clear port %s qos'% ft_book[net_to_wireless[net]]['out'][0])
+        #print('weird, who is Net???')
+        Net.cmdPrint('sudo ovs-vsctl --all destroy qos')
+        Net.cmdPrint('sudo ovs-vsctl --all destroy queue')
+        for net in self.nets:
+            Net = self.mn.nameToNode[net]
+            Net.cmdPrint('sudo ovs-ofctl del-flows %s' % net)
+            call(["sudo","bash","flowTable/netFTConfig_"+net+".sh"])
+            call(["sudo", "bash", "flowTable/netQConfig_" + net + ".sh"])
 
-            '''for MPTCP, if user only has lte connection, then shut off wlan'''
-            if(self.protocol=='MPTCP'or self.protocol=='FDM'):
-                for user in changeList:
-                    used_intf=[]
-                    used_lte=[]
-                    used_wifi=[]
-                    sta=self.mn.nameToNode[user]
-                    for net in self.nets:
-                        Net=self.mn.nameToNode[net]
-                        key=user+'-'+net
-                        if(self.connectivity[key]):
-                            used_intf.append(self.linkToIntf[key])
-                            if Net in self.mn.switches:
-                                used_lte.append(self.linkToIntf[key])
-                            else:
-                                used_wifi.append(self.linkToIntf[key])
-                            sta.cmdPrint("ip link set dev "+self.linkToIntf[key]+" multipath on")
-                    print("user " +user+" is using following interfaces ", used_intf)
-                    for intf in sta.intfList():
-                        if intf.name!='lo' and intf.name not in used_intf:
-                            sta.cmdPrint("ip link set dev "+intf.name+" multipath off")
-                            print("interface "+intf.name+" is not used")
-                    if len(used_wifi)>0:
-                        intf=used_wifi[0]
-                        print("default interface: ",intf)
-                        sta.cmdPrint("ip route change default scope global nexthop via "+self.IPTable[intf] +" dev "+  intf)
-                    elif len(used_lte)>0:
-                        intf=used_lte[0]
-                        print("default interface: ", intf)
-                        sta.cmdPrint("ip route change default scope global nexthop via "+self.IPTable[intf] +" dev "+  intf)
-                    else:
-                        info("user ",user, "has no network\n")
-                        exit(0)
-            else:
-                '''If SPTCP, prefer wifi interface, otherwise lte'''
-                for user in changeList:
-                    used_intf=[]
-                    used_lte=[]
-                    used_wifi=[]
-                    sta=self.mn.nameToNode[user]
-                    for net in self.nets:
-                        Net=self.mn.nameToNode[net]
-                        key=user+'-'+net
-                        if(self.connectivity[key]):
-                            used_intf.append(self.linkToIntf[key])
-                            if Net in self.mn.switches:
-                                used_lte.append(self.linkToIntf[key])
-                            else:
-                                used_wifi.append(self.linkToIntf[key])
-                            #sta.cmdPrint("ip link set dev "+self.linkToIntf[key]+" multipath on")
-                    print("\nuser " +user+" is using following interfaces ", used_intf)
-                    if len(used_wifi)>0:
-                        intf=used_wifi[0]
-                        print("default interface: ",intf)
-                        sta.cmdPrint("ip route change default scope global nexthop via "+self.IPTable[intf] +" dev "+  intf)
-                        sta.cmdPrint("kill $PID")
-                        self.ITGTest(sta,self.mn.nameToNode[self.server], self.demand[user]*250,self.end)
-                    elif len(used_lte)>0:
-                        intf=used_lte[0]
-                        print("default interface: ", intf)
-                        sta.cmdPrint("ip route change default scope global nexthop via "+self.IPTable[intf] +" dev "+  intf)
-                        sta.cmdPrint("kill $PID")
-                        self.ITGTest(sta,self.mn.nameToNode[self.server], self.demand[user]*250,self.end)
-                    else:
-                        info("user ",user, "has no network\n")
-                        exit(0)
+        '''for MPTCP, if user only has lte connection, then shut off wlan'''
+        if(self.protocol=='MPTCP'or self.protocol=='FDM'):
+            for user in changeList:
+                used_intf=[]
+                used_lte=[]
+                used_wifi=[]
+                sta=self.mn.nameToNode[user]
+                for net in self.nets:
+                    Net=self.mn.nameToNode[net]
+                    key=user+'-'+net
+                    if(self.connectivity[key]):
+                        used_intf.append(self.linkToIntf[key])
+                        if Net in self.mn.switches:
+                            used_lte.append(self.linkToIntf[key])
+                        else:
+                            used_wifi.append(self.linkToIntf[key])
+                        sta.cmdPrint("ip link set dev "+self.linkToIntf[key]+" multipath on")
+                print("user " +user+" is using following interfaces ", used_intf)
+                for intf in sta.intfList():
+                    if intf.name!='lo' and intf.name not in used_intf:
+                        sta.cmdPrint("ip link set dev "+intf.name+" multipath off")
+                        print("interface "+intf.name+" is not used")
+                if len(used_wifi)>0:
+                    intf=used_wifi[0]
+                    print("default interface: ",intf)
+                    sta.cmdPrint("ip route change default scope global nexthop via "+self.IPTable[intf] +" dev "+  intf)
+                elif len(used_lte)>0:
+                    intf=used_lte[0]
+                    print("default interface: ", intf)
+                    sta.cmdPrint("ip route change default scope global nexthop via "+self.IPTable[intf] +" dev "+  intf)
+                else:
+                    info("user ",user, "has no network\n")
+                    exit(0)
+        elif (not backboneFT):
+            '''If SPTCP, prefer wifi interface, otherwise lte'''
+            for user in changeList:
+                used_intf=[]
+                used_lte=[]
+                used_wifi=[]
+                sta=self.mn.nameToNode[user]
+                for net in self.nets:
+                    Net=self.mn.nameToNode[net]
+                    key=user+'-'+net
+                    if(self.connectivity[key]):
+                        used_intf.append(self.linkToIntf[key])
+                        if Net in self.mn.switches:
+                            used_lte.append(self.linkToIntf[key])
+                        else:
+                            used_wifi.append(self.linkToIntf[key])
+                        #sta.cmdPrint("ip link set dev "+self.linkToIntf[key]+" multipath on")
+                print("user " +user+" is using following interfaces ", used_intf)
+                if len(used_wifi)>0:
+                    intf=used_wifi[0]
+                    print("default interface: ",intf)
+                    sta.cmdPrint("ip route change default scope global nexthop via "+self.IPTable[intf] +" dev "+  intf)
+                    sta.cmdPrint("kill $PID_"+user)
+                    time.sleep(2)
+                    #print(sta, self.mn.nameToNode[self.server], self.demand[user] * 250, self.end*1000)
+                    self.ITGTest(sta,self.mn.nameToNode[self.server], self.demand[user]*250,self.end*1000)
+                elif len(used_lte)>0:
+                    intf=used_lte[0]
+                    print("default interface: ", intf)
+                    sta.cmdPrint("ip route change default scope global nexthop via "+self.IPTable[intf] +" dev "+  intf)
+                    sta.cmdPrint("kill $PID_"+user)
+                    time.sleep(2)
+                    #print(sta, self.mn.nameToNode[self.server], self.demand[user] * 250, self.end)
+                    self.ITGTest(sta,self.mn.nameToNode[self.server], self.demand[user]*250,self.end*1000)
+                else:
+                    info("user ",user, "has no network\n")
+                    exit(0)
 
-        else:
-            '''Max-min reduce request'''
-            info('FDM success infeasible\n')
+        # else:
+        #     '''Max-min reduce request'''
+        #     info('FDM success infeasible\n')
+        #     print(Gtable,NewCap)
 
-
-    def ITGTest(client, server, bw, sTime):
+    def ITGTest(self,client, server, bw, sTime):
         info('Sending message from ', client.name, '<->', server.name, '\n')
         client.cmd('pushd ~/D-ITG-2.8.1-r1023/bin')
         client.cmd('./ITGSend -T TCP -a 10.0.0.1 -c 500 -O ' + str(bw) + ' -t ' + str(sTime) + ' -l log/' + str(
             client.name) + '.log -x log/' + str(client.name) + '-' + str(server.name) + '.log &')
-        client.cmdPrint('PID=$!')
+        client.cmdPrint('PID_'+client.name+'=$!')
         client.cmd('popd')
 
 
@@ -763,7 +772,6 @@ class FDM(object):
 
     def FindX(self, nl, Gflow, Eflow, Cap, TotReq, MsgLen, Cost, Off):
         st,end=[0.0,1.0]
-        xlimit=float(0)
         Flow=[float(0) for i in range(nl)]
         while (end-st)>0.0001:
             exc=False
@@ -778,7 +786,7 @@ class FDM(object):
             else:
                 st=xlimit
         xlimit=st
-
+        #print(xlimit)
         x0=0.0
         f0=self.DelayF(x0,nl,Eflow,Gflow,Cap,MsgLen,TotReq,Cost,Off)
         x4=xlimit
@@ -811,7 +819,7 @@ class FDM(object):
         elif f2<=f4:
             return x2
         else:
-            return f4
+            return x4
     def convertMsgLen(self,MsgLen):
         pos=0
         for idx,char in enumerate(MsgLen):
