@@ -239,7 +239,10 @@ class FDM(object):
             print(changeList)
             if(len(changeList)>0):
             #run FDM
-                self.run_FDM(self.users)
+                if self.protocol=='SPTCP':
+                    self.run_FDM(changeList)
+                else:
+                    self.run_FDM(self.users)
 
             time.sleep(interval)
 
@@ -461,7 +464,7 @@ class FDM(object):
         if(feasible):
             '''Printing flow tables and stuff'''
 
-            #print(Gtable)
+            print(Gtable)
             info('FDM success\n')
         else:
             info('FDM success infeasible\n')
@@ -530,7 +533,7 @@ class FDM(object):
                         if(self.use_fdm):
                             Qcommand+="--id=@q"+str(idx+cnt)+" create Queue other-config:min-rate="+\
                                 str(int(float(Gtable[link][k])*0.9*(10**6)))+" other-config:max-rate="+\
-                                str(int(float(Gtable[link][k])*1.2*(10**6)))+" -- "
+                                str(int(float(Gtable[link][k])*1.0*(10**6)))+" -- "
                             FTcommand = "sudo ovs-ofctl add-flow " + names[n] + " ip,nw_src=" + k + "/32,actions=set_queue:" + \
                                         str(idx + cnt) + ",output:" + intf_num
                         else:
@@ -609,6 +612,10 @@ class FDM(object):
         elif (not backboneFT):
             '''If SPTCP, prefer wifi interface, otherwise lte'''
             for user in changeList:
+                sta=self.mn.nameToNode[user]
+                sta.cmdPrint("kill $PID_"+user)
+            time.sleep(5)
+            for user in changeList:
                 used_intf=[]
                 used_lte=[]
                 used_wifi=[]
@@ -628,16 +635,16 @@ class FDM(object):
                     intf=used_wifi[0]
                     print("default interface: ",intf)
                     sta.cmdPrint("ip route change default scope global nexthop via "+self.IPTable[intf] +" dev "+  intf)
-                    sta.cmdPrint("kill $PID_"+user)
-                    time.sleep(2)
+                    # sta.cmdPrint("kill $PID_"+user)
+
                     #print(sta, self.mn.nameToNode[self.server], self.demand[user] * 250, self.end*1000)
                     self.ITGTest(sta,self.mn.nameToNode[self.server], self.demand[user]*250,self.end*1000)
                 elif len(used_lte)>0:
                     intf=used_lte[0]
                     print("default interface: ", intf)
                     sta.cmdPrint("ip route change default scope global nexthop via "+self.IPTable[intf] +" dev "+  intf)
-                    sta.cmdPrint("kill $PID_"+user)
-                    time.sleep(2)
+                    # sta.cmdPrint("kill $PID_"+user)
+                    # time.sleep(2)
                     #print(sta, self.mn.nameToNode[self.server], self.demand[user] * 250, self.end)
                     self.ITGTest(sta,self.mn.nameToNode[self.server], self.demand[user]*250,self.end*1000)
                 else:
