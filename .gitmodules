@@ -1,6 +1,8 @@
 [submodule "iw"]
 	path = iw
 	url = https://git.kernel.org/pub/scm/linux/kernel/git/jberg/iw.git
+	ignore = dirty
 [submodule "hostap"]
 	path = hostap
 	url = http://w1.fi/hostap.git
+	ignore = dirty
