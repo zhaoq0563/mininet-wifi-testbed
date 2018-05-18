@@ -454,7 +454,7 @@ class FDM(object):
             ori_delay = self.CalcDelay_ori(nl, Gflow, NewCap, MsgLen, TotReq, Cost)
             info(CurrentDelay, " ", ori_delay,'\n')
             CurrentDelay=tmp_delay
-            if((Aflag==1 and (CurrentDelay>=PreviousDelay*(1-self.EPSILON))) or count>=100000):
+            if((Aflag==1 and (CurrentDelay>=PreviousDelay*(1-self.EPSILON))) or count>=100):
                 info('Problem is infeasible\n')
                 feasible=0
                 break
@@ -785,7 +785,7 @@ class FDM(object):
             xlimit=(st+end)/2
             for i in range(nl):
                 Flow[i]=xlimit*Eflow[i]+(1-xlimit)*Gflow[i]
-                if(Flow[i]>Cap[i]):
+                if(Flow[i]>=Cap[i]):
                     exc=True
                     break
             if(exc):
